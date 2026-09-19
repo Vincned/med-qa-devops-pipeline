@@ -84,9 +84,8 @@ services:
     # so that the Allure result files are preserved after the container stops.
     volumes:
       - ./allure-results:/app/allure-results
-      - app-network
     networks:
-      - apt-network
+      - app-network
 
 # defines an isolated bridge-type virtual network. 
 # All three containers (db, app, test-runner) are located in this network
