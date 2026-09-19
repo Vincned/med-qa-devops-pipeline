@@ -1,0 +1,42 @@
+name: FastAPI DevOps QA Pipeline 🚀
+
+# События, которые запускают пайплайн
+# Триггеры запуска. Пайплайн запускается при каждом коммите
+# или создании Pull Request в ветки main или master.
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+  
+  # GitHub автоматически выделяет чистую виртуальную машину
+  # на базе Ubuntu Linux.
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Скачиваем код из нашего репозитория на виртуальную машину GitHub
+      - name: Checkout repository code 📥
+
+      # Готовый экшен от GitHub, который копирует 
+      #(делает git clone) вашего кода на эту виртуальную машину.
+        uses: actions/checkout@v4
+
+      # 2. Собираем и запускаем контейнеры через Docker Compose
+      - name: Run Integration Tests via Docker Compose 🐳
+
+        # Cобирает образы, запускает app, проверяет healthcheck 
+        # и выполняет test-runner
+        run: |
+          docker compose up --build --exit-code-from test-runner
+
+      # 3. Сохраняем артефакты Allure-отчетов, если они сгенерировались
+      - name: Upload Allure Results Artifact 📊
+        if: always() # Выполнять шаг даже если тесты упали
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results/
+          retention-days: 5
