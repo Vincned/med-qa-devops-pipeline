@@ -1,47 +1,94 @@
+# Syntax of the Docker specification.
+version: '3.8'
 
-# Корневой блок, где мы описываем все контейнеры,
-# которые должны работать в единой сети.
-services:   
+services:
   
-# Имя нашего сервиса (и по совместительству доменное имя
-# внутри сети Docker)
+  # Service name in the initial Docker network. 
+  # This name is used for callind containers to the database 
+  db:
+    
+    # Using the light PostgreSQL iso on the Alpine Linux base
+    image: postgres:15-alpine
+    container_name: postgres_db
+
+    # Name of the variables, that iso Postgess reads while 
+    # first start for automatic creation user, password and database
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: patients_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+    
+    # uses the tool pg_isready, witch checks if the base 
+    # is ready to accept the requests from user
+      test: ["CMD-SHELL", "pg_isready -U user -d patients_db"]
+      interval: 3s
+      timeout: 3s
+      
+      # if 5 checks were failed - the container gives
+      # unhealthy status
+      retries: 5
+    networks:
+      - app-network   
+  
+# Service name
   app:   
 
-#.Указывает Docker Compose собрать образ из контекста текущей
-# папки (.), используя рецепт из Dockerfile.app        
+# Explain, that Docker Compose need to build from the current 
+# folder (.), by using the recipe from the Dockerfile.app        
     build:
-      context: .         # Где искать файлы (текущая папка)
-      dockerfile: Dockerfile.app  # Какой рецепт использовать для сборки API
+      context: .
+      dockerfile: Dockerfile.app  
+    
+    # Port open locally to FastAPI by http://localhost:8000
     ports:
-      - "8000:8000"      # Проброс порта (Компьютер:Контейнер), чтобы API был доступен на localhost:8000
+      - "8000:8000"
+    environment:
+    
+    # Reports the connection string to database
+    # (instead of localhost we use the db name)
+      - DATABASE_URL=postgresql://user:password@db:5432/patients_db
+    depends_on:
+      db:
 
+      # tells Docker Compose not to start the application until
+      # the `db` service passes its health check and becomes healthy.
+        condition: service_healthy
+    
+    healthcheck:
 
-#Автоматическая проверка работоспособности сервиса:
-    healthcheck:         # Проверка: «Сервер уже поднялся и готов принимать запросы?»
-      
-      # выполняет запрос curl -f внутри контейнера app. 
-      #Если эндпоинт отвечает ошибкой (4xx/5xx) или не отвечает 
-      #вовсе, команда возвращает exit 1 (провал).
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]  # Каждые 5 сек (interval) делает запрос на http://localhost:8000/health
-      
-      #делать проверку каждые 3 секунды.
-      interval: 5s 
+    # checks the readiness of the web server itself via an 
+    # HTTP GET request to the /health endpoint
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
 
-      #если ответ не пришел за 2 секунды, считать попытку неудачной.
-      timeout: 3s 
-
-      #сделать 5 попыток перед тем, как окончательно 
-      #присвоить контейнеру статус unhealthy
-      retries: 5         # Если 5 раз ответил OK — статус меняется на "healthy"
-
-
-# Вторая служба, содержащая фреймворк с автотестами Pytest.
   test-runner:           
     build:
       context: .
-      dockerfile: Dockerfile.tests # Какой рецепт использовать для тестов
+      dockerfile: Dockerfile.tests
+    container_name: test_runner
     depends_on:
       app:
-        condition: service_healthy # ГЛАВНАЯ МАГИЯ: ждем, пока 'app' не станет "healthy"
+      
+      # tells Docker Compose not to start the application until
+      # the `db` service passes its health check and becomes healthy.
+        condition: service_healthy
+    
+    # mounts a folder from the container to your local disk
+    # so that the Allure result files are preserved after the container stops.
     volumes:
-      - ./allure-results:/workspace/allure-results # Сохраняем отчеты из контейнера на ваш диск
+      - ./allure-results:/app/allure-results
+      - app-network
+
+# defines an isolated bridge-type virtual network. 
+# All three containers (db, app, test-runner) are located in this network
+# can see each other by service name via Docker's internal DNS.
+networks:
+  app-network:
+    driver: bridge
