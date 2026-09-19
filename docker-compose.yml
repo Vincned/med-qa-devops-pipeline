@@ -85,6 +85,8 @@ services:
     volumes:
       - ./allure-results:/app/allure-results
       - app-network
+    networks:
+      - apt-network
 
 # defines an isolated bridge-type virtual network. 
 # All three containers (db, app, test-runner) are located in this network
